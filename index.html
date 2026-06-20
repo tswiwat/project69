@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="th" data-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Executive Project Tracking Dashboard | โรงเรียนครุศาสตร์</title>
+    <!-- CSS Stylesheet -->
+    <link rel="stylesheet" href="style.css">
+    <!-- FontAwesome for Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- ApexCharts CDN for Charts -->
+    <script src="https://cdn.jsdelivr.net/npm/apexcharts"></script>
+</head>
+<body>
+
+    <div class="dashboard-container">
+        <!-- Header Section -->
+        <header>
+            <div class="logo-section">
+                <div class="logo-icon">
+                    <i class="fa-solid fa-chart-line"></i>
+                </div>
+                <div class="title-group">
+                    <h1>ระบบติดตามแผนงานโครงการสำหรับผู้บริหาร</h1>
+                    <p>โรงเรียนครุศาสตร์ (ข้อมูลอัปเดตตรงจาก Google Sheets)</p>
+                </div>
+            </div>
+            
+            <div class="header-controls">
+                <div class="sync-status" id="syncStatus">
+                    <span></span> ดึงข้อมูลล่าสุดเรียบร้อย
+                </div>
+                <button class="btn" id="refreshBtn" title="ดึงข้อมูลใหม่แบบสด">
+                    <i class="fa-solid fa-rotate"></i>
+                    <span>รีเฟรชข้อมูล</span>
+                </button>
+                <button class="btn btn-icon" id="themeToggleBtn" title="สลับธีม สว่าง/มืด">
+                    <i class="fa-solid fa-moon"></i>
+                </button>
+            </div>
+        </header>
+
+        <!-- KPI Cards Grid -->
+        <section class="kpi-grid">
+            <!-- Total Projects Card -->
+            <div class="kpi-card purple" id="kpiTotalProjects">
+                <div class="kpi-header">
+                    <span class="kpi-title">โครงการทั้งหมด</span>
+                    <div class="kpi-icon">
+                        <i class="fa-solid fa-folder-open"></i>
+                    </div>
+                </div>
+                <div class="kpi-value skeleton" id="valTotalProjects">--</div>
+                <div class="kpi-footer" id="footerTotalProjects">
+                    กำลังโหลดข้อมูล...
+                </div>
+            </div>
+
+            <!-- Total Budget Card -->
+            <div class="kpi-card blue" id="kpiTotalBudget">
+                <div class="kpi-header">
+                    <span class="kpi-title">งบประมาณรวมทั้งหมด</span>
+                    <div class="kpi-icon">
+                        <i class="fa-solid fa-wallet"></i>
+                    </div>
+                </div>
+                <div class="kpi-value skeleton" id="valTotalBudget">--</div>
+                <div class="kpi-footer" id="footerTotalBudget">
+                    กำลังโหลดข้อมูล...
+                </div>
+            </div>
+
+            <!-- Total Spent Card -->
+            <div class="kpi-card emerald" id="kpiSpent">
+                <div class="kpi-header">
+                    <span class="kpi-title">งบประมาณที่ใช้ไป</span>
+                    <div class="kpi-icon">
+                        <i class="fa-solid fa-circle-dollar-to-slot"></i>
+                    </div>
+                </div>
+                <div class="kpi-value skeleton" id="valSpent">--</div>
+                <div class="kpi-footer" id="footerSpent">
+                    กำลังโหลดข้อมูล...
+                </div>
+            </div>
+
+            <!-- Total Remaining Card -->
+            <div class="kpi-card amber" id="kpiRemaining">
+                <div class="kpi-header">
+                    <span class="kpi-title">งบประมาณคงเหลือ</span>
+                    <div class="kpi-icon">
+                        <i class="fa-solid fa-scale-balanced"></i>
+                    </div>
+                </div>
+                <div class="kpi-value skeleton" id="valRemaining">--</div>
+                <div class="kpi-footer" id="footerRemaining">
+                    กำลังโหลดข้อมูล...
+                </div>
+            </div>
+
+            <!-- Overall Progress Card -->
+            <div class="kpi-card purple" id="kpiProgress">
+                <div class="kpi-header">
+                    <span class="kpi-title">ความคืบหน้าเฉลี่ย</span>
+                    <div class="kpi-icon">
+                        <i class="fa-solid fa-percent"></i>
+                    </div>
+                </div>
+                <div class="kpi-value skeleton" id="valProgress">--</div>
+                <div class="kpi-footer" id="footerProgress">
+                    กำลังโหลดข้อมูล...
+                </div>
+            </div>
+        </section>
+
+        <!-- Charts Layout Grid -->
+        <section class="charts-grid">
+            <!-- Left Chart: Department Budget and Spent -->
+            <div class="chart-card">
+                <div class="chart-header">
+                    <div class="chart-title">
+                        <i class="fa-solid fa-chart-column"></i>
+                        <span>สรุปการใช้งบประมาณตามกลุ่มงาน</span>
+                    </div>
+                </div>
+                <div class="chart-body" id="departmentBudgetChart">
+                    <!-- Loaded dynamically via JS -->
+                </div>
+            </div>
+
+            <!-- Right Chart: Status Distribution -->
+            <div class="chart-card">
+                <div class="chart-header">
+                    <div class="chart-title">
+                        <i class="fa-solid fa-circle-half-stroke"></i>
+                        <span>สัดส่วนสถานะโครงการ</span>
+                    </div>
+                </div>
+                <div class="chart-body" id="statusDonutChart">
+                    <!-- Loaded dynamically via JS -->
+                </div>
+            </div>
+        </section>
+
+        <!-- Project Table List -->
+        <section class="table-card">
+            <!-- Filter Controls Bar -->
+            <div class="filter-bar">
+                <div class="search-wrapper">
+                    <i class="fa-solid fa-magnifying-glass"></i>
+                    <input type="text" class="search-input" id="tableSearch" placeholder="ค้นหาตามชื่อโครงการ หรือผู้รับผิดชอบ...">
+                </div>
+                <div class="filters-wrapper">
+                    <select class="filter-select" id="filterDept">
+                        <option value="">ทุกกลุ่มงาน</option>
+                        <!-- Dynamic options -->
+                    </select>
+                    <select class="filter-select" id="filterStatus">
+                        <option value="">ทุกสถานะ</option>
+                        <option value="ดำเนินการแล้ว">ดำเนินการแล้ว</option>
+                        <option value="อยู่ระหว่างดำเนินการ">อยู่ระหว่างดำเนินการ</option>
+                        <option value="ยังไม่ดำเนินการ">ยังไม่ดำเนินการ</option>
+                    </select>
+                    <button class="btn" id="resetFiltersBtn" title="ล้างการกรองทั้งหมด">
+                        <i class="fa-solid fa-filter-circle-xmark"></i>
+                        <span>ล้างตัวกรอง</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Responsive Table -->
+            <div class="table-wrapper">
+                <table id="projectsTable">
+                    <thead>
+                        <tr>
+                            <th style="width: 80px;">รหัส</th>
+                            <th>ชื่อโครงการ</th>
+                            <th>ผู้รับผิดชอบ</th>
+                            <th>กลุ่มงาน</th>
+                            <th style="text-align: right;">งบประมาณ (บาท)</th>
+                            <th style="text-align: right;">ใช้ไป (บาท)</th>
+                            <th style="text-align: right;">คงเหลือ (บาท)</th>
+                            <th>ความคืบหน้า</th>
+                            <th>สถานะ</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tableBody">
+                        <!-- Loading Skeletons -->
+                        <tr class="skeleton-row">
+                            <td class="skeleton" style="height: 53px;"></td>
+                            <td class="skeleton"></td>
+                            <td class="skeleton"></td>
+                            <td class="skeleton"></td>
+                            <td class="skeleton"></td>
+                            <td class="skeleton"></td>
+                            <td class="skeleton"></td>
+                            <td class="skeleton"></td>
+                            <td class="skeleton"></td>
+                        </tr>
+                        <tr class="skeleton-row">
+                            <td class="skeleton" style="height: 53px;"></td>
+                            <td class="skeleton"></td>
+                            <td class="skeleton"></td>
+                            <td class="skeleton"></td>
+                            <td class="skeleton"></td>
+                            <td class="skeleton"></td>
+                            <td class="skeleton"></td>
+                            <td class="skeleton"></td>
+                            <td class="skeleton"></td>
+                        </tr>
+                        <tr class="skeleton-row">
+                            <td class="skeleton" style="height: 53px;"></td>
+                            <td class="skeleton"></td>
+                            <td class="skeleton"></td>
+                            <td class="skeleton"></td>
+                            <td class="skeleton"></td>
+                            <td class="skeleton"></td>
+                            <td class="skeleton"></td>
+                            <td class="skeleton"></td>
+                            <td class="skeleton"></td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    </div>
+
+    <!-- Project Detail Modal -->
+    <div class="modal-overlay" id="projectModal">
+        <div class="modal-content">
+            <div class="modal-header-accent"></div>
+            <button class="modal-close-btn" id="modalCloseBtn">
+                <i class="fa-solid fa-xmark"></i>
+            </button>
+            <div class="modal-body">
+                <div class="modal-title-group">
+                    <span class="modal-project-id" id="modalProjId">PROJ-00</span>
+                    <h2 class="modal-project-name" id="modalProjName">ชื่อโครงการตัวอย่าง</h2>
+                </div>
+
+                <div class="modal-progress-section">
+                    <div class="modal-progress-header">
+                        <span>ความคืบหน้าของโครงการ</span>
+                        <span id="modalProgressText">0%</span>
+                    </div>
+                    <div class="modal-progress-bar">
+                        <div class="modal-progress-fill" id="modalProgressFill"></div>
+                    </div>
+                </div>
+
+                <div class="modal-grid">
+                    <div>
+                        <div class="info-item-label">ผู้รับผิดชอบโครงการ</div>
+                        <div class="info-item-value" id="modalOwner">--</div>
+                    </div>
+                    <div>
+                        <div class="info-item-label">กลุ่มงานสังกัด</div>
+                        <div class="info-item-value" id="modalDept">--</div>
+                    </div>
+                    <div>
+                        <div class="info-item-label">งบประมาณรวม</div>
+                        <div class="info-item-value highlight" id="modalBudget">0.00 บาท</div>
+                    </div>
+                    <div>
+                        <div class="info-item-label">งบประมาณใช้ไปแล้ว</div>
+                        <div class="info-item-value highlight trend-down" id="modalSpent">0.00 บาท</div>
+                    </div>
+                    <div>
+                        <div class="info-item-label">งบประมาณคงเหลือ</div>
+                        <div class="info-item-value highlight trend-up" id="modalRemaining">0.00 บาท</div>
+                    </div>
+                    <div>
+                        <div class="info-item-label">สถานะปัจจุบัน</div>
+                        <div id="modalStatusContainer">
+                            <span class="badge" id="modalStatusBadge">--</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Application JavaScript Logic -->
+    <script src="app.js"></script>
+</body>
+</html>
