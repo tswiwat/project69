@@ -6,6 +6,12 @@ let projectsData = [];
 let filteredProjects = [];
 let deptChart = null;
 let statusChart = null;
+let currentActiveProjectId = null;
+
+// IndexedDB Database Configuration
+const DB_NAME = "ProcurementDocsDB";
+const DB_VERSION = 1;
+const STORE_NAME = "documents";
 
 // DOM Elements
 const valTotalProjects = document.getElementById("valTotalProjects");
@@ -61,6 +67,39 @@ document.addEventListener("DOMContentLoaded", () => {
     projectModal.addEventListener("click", (e) => {
         if (e.target === projectModal) closeModal();
     });
+
+    // Procurement Upload Zone Event Listeners
+    const uploadZone = document.getElementById("uploadZone");
+    const docFileInput = document.getElementById("docFileInput");
+    
+    if (uploadZone && docFileInput) {
+        uploadZone.addEventListener("click", () => docFileInput.click());
+        docFileInput.addEventListener("change", handleFileSelect);
+        
+        // Drag and drop visual cues
+        ["dragenter", "dragover"].forEach(eventName => {
+            uploadZone.addEventListener(eventName, (e) => {
+                e.preventDefault();
+                uploadZone.classList.add("dragover");
+            }, false);
+        });
+        
+        ["dragleave", "drop"].forEach(eventName => {
+            uploadZone.addEventListener(eventName, (e) => {
+                e.preventDefault();
+                uploadZone.classList.remove("dragover");
+            }, false);
+        });
+        
+        // Handling file drops
+        uploadZone.addEventListener("drop", (e) => {
+            const dt = e.dataTransfer;
+            const files = dt.files;
+            if (files.length > 0) {
+                handleFileUpload(files[0]);
+            }
+        }, false);
+    }
 });
 
 // Theme Management
@@ -190,7 +229,8 @@ function processAndRenderData(table) {
         spent: cols.findIndex(c => c.label === "ใช้ไปแล้ว"),
         remaining: cols.findIndex(c => c.label === "คงเหลือ"),
         progress: cols.findIndex(c => c.label === "ความคืบหน้า"),
-        status: cols.findIndex(c => c.label === "สถานะ")
+        status: cols.findIndex(c => c.label === "สถานะ"),
+        procurementDoc: cols.findIndex(c => c.label === "เอกสารจัดซื้อจัดจ้าง" || c.label === "ลิงก์เอกสาร" || c.label === "เอกสารประกอบ" || c.label === "เอกสาร")
     };
     
     // Helper function to get cell value safely
@@ -206,6 +246,7 @@ function processAndRenderData(table) {
         const remainingVal = getVal(row, colIndices.remaining !== -1 ? colIndices.remaining : 6, null);
         const remaining = remainingVal !== null ? Number(remainingVal) : (budget - spent);
         const progress = Number(getVal(row, colIndices.progress !== -1 ? colIndices.progress : 7, 0));
+        const procurementDoc = String(getVal(row, colIndices.procurementDoc, "")).trim();
 
         return {
             id: String(getVal(row, colIndices.id !== -1 ? colIndices.id : 0, "N/A")),
@@ -216,7 +257,8 @@ function processAndRenderData(table) {
             spent: spent,
             remaining: remaining,
             progress: progress,
-            status: String(getVal(row, colIndices.status !== -1 ? colIndices.status : 8, "ยังไม่ดำเนินการ")).trim()
+            status: String(getVal(row, colIndices.status !== -1 ? colIndices.status : 8, "ยังไม่ดำเนินการ")).trim(),
+            procurementDoc: procurementDoc
         };
     });
 
@@ -569,6 +611,8 @@ function resetFilters() {
 
 // Modal View Functions
 function openModal(project) {
+    currentActiveProjectId = project.id;
+    
     modalProjId.textContent = `รหัสโครงการ: ${project.id}`;
     modalProjName.textContent = project.name;
     modalProgressText.textContent = `${project.progress}%`;
@@ -587,6 +631,9 @@ function openModal(project) {
     
     modalStatusBadge.className = `badge ${badgeClass}`;
     modalStatusBadge.textContent = project.status;
+
+    // Load and render procurement documents
+    loadAndRenderModalDocuments();
 
     projectModal.classList.add("active");
 }
@@ -651,4 +698,242 @@ function showErrorState(message) {
             </td>
         </tr>
     `;
+}
+
+// ==========================================
+// IndexedDB Setup & Document Management Functions
+// ==========================================
+
+function initDB() {
+    return new Promise((resolve, reject) => {
+        const request = indexedDB.open(DB_NAME, DB_VERSION);
+        request.onupgradeneeded = (e) => {
+            const db = e.target.result;
+            if (!db.objectStoreNames.contains(STORE_NAME)) {
+                db.createObjectStore(STORE_NAME, { keyPath: "id", autoIncrement: true });
+            }
+        };
+        request.onsuccess = (e) => resolve(e.target.result);
+        request.onerror = (e) => reject(e.target.error);
+    });
+}
+
+function addDocument(projectId, name, fileBlob, type, size) {
+    return initDB().then(db => {
+        return new Promise((resolve, reject) => {
+            const transaction = db.transaction(STORE_NAME, "readwrite");
+            const store = transaction.objectStore(STORE_NAME);
+            
+            const doc = {
+                projectId: String(projectId),
+                name: name,
+                file: fileBlob,
+                type: type,
+                size: size,
+                uploadedAt: new Date().toISOString()
+            };
+            
+            const request = store.add(doc);
+            request.onsuccess = () => resolve();
+            request.onerror = (e) => reject(e.target.error);
+        });
+    });
+}
+
+function getDocumentsByProject(projectId) {
+    return initDB().then(db => {
+        return new Promise((resolve, reject) => {
+            const transaction = db.transaction(STORE_NAME, "readonly");
+            const store = transaction.objectStore(STORE_NAME);
+            const request = store.getAll();
+            
+            request.onsuccess = (e) => {
+                const allDocs = e.target.result;
+                const projectDocs = allDocs.filter(doc => String(doc.projectId) === String(projectId));
+                resolve(projectDocs);
+            };
+            request.onerror = (e) => reject(e.target.error);
+        });
+    });
+}
+
+function deleteDocument(docId) {
+    return initDB().then(db => {
+        return new Promise((resolve, reject) => {
+            const transaction = db.transaction(STORE_NAME, "readwrite");
+            const store = transaction.objectStore(STORE_NAME);
+            const request = store.delete(docId);
+            request.onsuccess = () => resolve();
+            request.onerror = (e) => reject(e.target.error);
+        });
+    });
+}
+
+// ==========================================
+// Document UI Event Handlers & Rendering
+// ==========================================
+
+function handleFileSelect(e) {
+    const files = e.target.files;
+    if (files.length > 0) {
+        handleFileUpload(files[0]);
+    }
+}
+
+function handleFileUpload(file) {
+    if (!currentActiveProjectId) return;
+    
+    // Check file size (20MB limit)
+    const MAX_SIZE = 20 * 1024 * 1024;
+    if (file.size > MAX_SIZE) {
+        alert("ขนาดไฟล์ใหญ่เกินกำหนด (สูงสุด 20MB)");
+        return;
+    }
+    
+    // Save to IndexedDB
+    addDocument(currentActiveProjectId, file.name, file, file.type, file.size)
+        .then(() => {
+            // Clear file input
+            document.getElementById("docFileInput").value = "";
+            // Reload documents list
+            loadAndRenderModalDocuments();
+        })
+        .catch(err => {
+            console.error("Error saving document:", err);
+            alert("ไม่สามารถบันทึกเอกสารได้: " + err.message);
+        });
+}
+
+function loadAndRenderModalDocuments() {
+    if (!currentActiveProjectId) return;
+    
+    // Find project data for cloud documents from Google Sheets
+    const project = projectsData.find(p => String(p.id) === String(currentActiveProjectId));
+    const cloudDocLink = project ? project.procurementDoc : "";
+    
+    getDocumentsByProject(currentActiveProjectId)
+        .then(localDocs => {
+            renderModalDocumentsList(localDocs, cloudDocLink);
+        })
+        .catch(err => {
+            console.error("Error loading project documents:", err);
+            renderModalDocumentsList([], cloudDocLink);
+        });
+}
+
+function renderModalDocumentsList(localDocs, cloudDocLink) {
+    const docsList = document.getElementById("modalDocsList");
+    if (!docsList) return;
+    
+    docsList.innerHTML = "";
+    
+    // Check if there are any documents (local or cloud)
+    const hasCloudDoc = cloudDocLink && cloudDocLink.startsWith("http");
+    const hasLocalDocs = localDocs && localDocs.length > 0;
+    
+    if (!hasCloudDoc && !hasLocalDocs) {
+        docsList.innerHTML = `
+            <div style="text-align: center; padding: 16px; color: var(--text-muted); font-size: 13px;">
+                <i class="fa-regular fa-folder-open" style="margin-right: 6px; font-size: 18px; display: block; margin-bottom: 8px; color: var(--text-muted);"></i> 
+                ไม่มีเอกสารจัดซื้อจัดจ้างแนบสำหรับโครงการนี้
+            </div>
+        `;
+        return;
+    }
+    
+    // 1. Render Cloud Document from Google Sheets if exists
+    if (hasCloudDoc) {
+        const div = document.createElement("div");
+        div.className = "doc-item";
+        
+        div.innerHTML = `
+            <div class="doc-info">
+                <i class="fa-solid fa-cloud doc-icon" style="color: var(--info);"></i>
+                <div class="doc-details">
+                    <span class="doc-name" title="เอกสารจาก Google Sheets">เอกสารจัดซื้อจัดจ้าง (Google Sheets)</span>
+                    <span class="doc-meta">คลาวด์ลิงก์ภายนอก</span>
+                </div>
+            </div>
+            <div class="doc-actions">
+                <a href="${cloudDocLink}" target="_blank" class="doc-btn doc-btn-download" title="เปิดลิงก์เอกสาร">
+                    <i class="fa-solid fa-arrow-up-right-from-square"></i>
+                </a>
+            </div>
+        `;
+        docsList.appendChild(div);
+    }
+    
+    // 2. Render Local Documents from IndexedDB
+    if (hasLocalDocs) {
+        localDocs.forEach(doc => {
+            const div = document.createElement("div");
+            div.className = "doc-item";
+            
+            // Format size
+            let sizeText = "";
+            if (doc.size < 1024) sizeText = `${doc.size} B`;
+            else if (doc.size < 1024 * 1024) sizeText = `${(doc.size / 1024).toFixed(1)} KB`;
+            else sizeText = `${(doc.size / (1024 * 1024)).toFixed(1)} MB`;
+            
+            // Format date
+            const date = new Date(doc.uploadedAt).toLocaleDateString("th-TH", {
+                day: "2-digit",
+                month: "2-digit",
+                year: "numeric",
+                hour: "2-digit",
+                minute: "2-digit"
+            });
+            
+            // Get file icon based on file type
+            let iconClass = "fa-file";
+            const mime = String(doc.type).toLowerCase();
+            if (mime.includes("pdf")) iconClass = "fa-file-pdf";
+            else if (mime.includes("sheet") || mime.includes("excel") || mime.includes("csv") || doc.name.endsWith(".xlsx") || doc.name.endsWith(".xls")) iconClass = "fa-file-excel";
+            else if (mime.includes("word") || mime.includes("officedocument.word") || doc.name.endsWith(".docx") || doc.name.endsWith(".doc")) iconClass = "fa-file-word";
+            else if (mime.includes("image")) iconClass = "fa-file-image";
+            else if (mime.includes("presentation") || mime.includes("powerpoint") || doc.name.endsWith(".pptx")) iconClass = "fa-file-powerpoint";
+            
+            div.innerHTML = `
+                <div class="doc-info">
+                    <i class="fa-solid ${iconClass} doc-icon"></i>
+                    <div class="doc-details">
+                        <span class="doc-name" title="${doc.name}">${doc.name}</span>
+                        <span class="doc-meta">${sizeText} | อัปโหลดเมื่อ ${date} น.</span>
+                    </div>
+                </div>
+                <div class="doc-actions">
+                    <button class="doc-btn doc-btn-download" id="download-btn-${doc.id}" title="ดาวน์โหลดเอกสาร">
+                        <i class="fa-solid fa-download"></i>
+                    </button>
+                    <button class="doc-btn doc-btn-delete" id="delete-btn-${doc.id}" title="ลบเอกสาร">
+                        <i class="fa-solid fa-trash-can"></i>
+                    </button>
+                </div>
+            `;
+            
+            docsList.appendChild(div);
+            
+            // Attach event listeners to buttons
+            document.getElementById(`download-btn-${doc.id}`).addEventListener("click", (e) => {
+                e.stopPropagation();
+                const url = URL.createObjectURL(doc.file);
+                const a = document.createElement("a");
+                a.href = url;
+                a.download = doc.name;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+            });
+            
+            document.getElementById(`delete-btn-${doc.id}`).addEventListener("click", (e) => {
+                e.stopPropagation();
+                if (confirm(`คุณต้องการลบเอกสาร "${doc.name}" ใช่หรือไม่?`)) {
+                    deleteDocument(doc.id).then(() => {
+                        loadAndRenderModalDocuments();
+                    });
+                }
+            });
+        });
+    }
 }
